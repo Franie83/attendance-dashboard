@@ -1,0 +1,65 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+import io
+
+st.set_page_config("Attendance Dashboard", layout="centered")
+
+st.title("📊 Attendance Dashboard")
+
+# Upload Excel file
+uploaded_file = st.file_uploader("📤 Upload your Excel file", type=["xlsx"])
+
+if uploaded_file:
+    try:
+        df = pd.read_excel(uploaded_file)
+
+        st.subheader("🔍 Raw Data")
+        st.dataframe(df.head())
+
+        # Parse datetime
+        df['Timeout'] = pd.to_datetime(df['Timeout'])
+        df['Timein_dt'] = pd.to_datetime(df['Timeout'].dt.date.astype(str) + ' ' + df['Timein'])
+        df['Session Duration (min)'] = (df['Timeout'] - df['Timein_dt']).dt.total_seconds() / 60
+        df['Date'] = df['Timeout'].dt.date
+
+        # Daily summary
+        daily_summary = df.groupby('Date').agg(
+            First_In=('Timein_dt', 'min'),
+            Last_Out=('Timeout', 'max'),
+            Sessions=('Timeid', 'count'),
+            Total_Time_Min=('Session Duration (min)', 'sum')
+        ).reset_index()
+        daily_summary['Avg Session (min)'] = daily_summary['Total_Time_Min'] / daily_summary['Sessions']
+
+        st.subheader("📅 Daily Attendance Summary")
+        st.dataframe(daily_summary.style.format({"Total_Time_Min": "{:.1f}", "Avg Session (min)": "{:.1f}"}))
+
+        # Appearance frequency by employee
+        st.subheader("🧍‍♂️ Number of Times Each Employee Appeared")
+        appearances = df.groupby('Name').agg(
+            Appearances=('Timeid', 'count'),
+            Total_Sessions=('Date', 'nunique'),
+            Total_Time_Min=('Session Duration (min)', 'sum')
+        ).reset_index()
+        appearances['Avg Time per Appearance (min)'] = appearances['Total_Time_Min'] / appearances['Appearances']
+        st.dataframe(appearances.style.format({"Total_Time_Min": "{:.1f}", "Avg Time per Appearance (min)": "{:.1f}"}))
+
+        # Plot
+        st.subheader("📈 Total Time and Session Count Over Time")
+        st.line_chart(daily_summary.set_index("Date")[["Total_Time_Min", "Sessions"]])
+
+        # Download
+        towrite = io.BytesIO()
+        with pd.ExcelWriter(towrite, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name="Raw Data")
+            daily_summary.to_excel(writer, index=False, sheet_name="Daily Summary")
+            appearances.to_excel(writer, index=False, sheet_name="Appearances")
+        towrite.seek(0)
+
+        st.download_button("⬇️ Download All Summaries as Excel", towrite, file_name="attendance_report.xlsx")
+
+    except Exception as e:
+        st.error(f"❌ Error processing file: {e}")
+else:
+    st.info("Please upload an Excel file with columns: Timeid, VIN, Image, Name, Timein, Timeout")

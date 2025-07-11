@@ -1,0 +1,7 @@
+streamlit
+pandas
+altair
+fpdf
+Pillow
+altair_saver
+openpyxl
